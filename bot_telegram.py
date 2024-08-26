@@ -16,6 +16,15 @@ logging.basicConfig(
     level=logging.INFO
 )
 
+# Defina o manipulador para Vercel
+async def handler(request):
+    logging.info("Handler invocado.")
+    await run_bot()
+    return {
+        "statusCode": 200,
+        "body": "Bot executado com sucesso!"
+    }
+
 # Inicializa o scheduler
 scheduler = AsyncIOScheduler()
 
