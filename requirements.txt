@@ -1,0 +1,4 @@
+nest_asyncio
+python-telegram-bot
+APScheduler
+yfinance
