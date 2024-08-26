@@ -16,15 +16,6 @@ logging.basicConfig(
     level=logging.INFO
 )
 
-# Defina o manipulador para Vercel
-async def handler(request):
-    logging.info("Handler invocado.")
-    await run_bot()
-    return {
-        "statusCode": 200,
-        "body": "Bot executado com sucesso!"
-    }
-
 # Inicializa o scheduler
 scheduler = AsyncIOScheduler()
 
@@ -146,6 +137,15 @@ async def run_bot(context):
     logging.info("Iniciando verificação das estratégias...")
     current_time = datetime.now()
 
+async def handler(request):
+    """Manipulador principal que será invocado pelo Vercel."""
+    logging.info("Handler invocado.")
+    await run_bot()  # Chama o bot
+    return {
+        "statusCode": 200,
+        "body": "Bot executado com sucesso!"
+    }
+        
     for ativo in ativos:
         candles = await obter_dados_precos(ativo)
         if not candles:
