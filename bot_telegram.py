@@ -12,7 +12,7 @@ nest_asyncio.apply()
 
 # Configuração de log
 logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    format='%(asctime)s - %(name)s - %(levelname)s',
     level=logging.INFO
 )
 
@@ -21,25 +21,21 @@ scheduler = AsyncIOScheduler()
 
 # Dicionário para armazenar as últimas mensagens enviadas
 last_sent_time = {}
-signals_queue = []  # Inicializa a fila de sinais
-operation_results = []  # Inicializa a lista de resultados das operações
-operation_count = 0  # Contador de operações
+signals_queue = []
+operation_results = []
+operation_count = 0
 
-# Intervalo mínimo entre sinais para cada estratégia
 MIN_INTERVALS = timedelta(seconds=10)
 
 async def obter_dados_precos(ativo):
-    """Obtém dados de preços históricos de um ativo usando yfinance."""
     df = yf.download(ativo, period='1d', interval='5m')
     if df.empty:
         return []
     
-    # Estrutura os dados em uma lista de dicionários
     candles = df[['Open', 'High', 'Low', 'Close']].reset_index()
     candles = candles.rename(columns={'Open': 'open', 'High': 'high', 'Low': 'low', 'Close': 'close'})
     return candles.to_dict('records')
 
-# Definindo os ativos
 ativos = {
     'EURCHF=X': {'name': 'EUR/CHF', 'price': None, 'trend': None},
     'CADCHF=X': {'name': 'CAD/CHF', 'price': None, 'trend': None},
@@ -48,7 +44,6 @@ ativos = {
     'BTC-USD': {'name': 'Bitcoin', 'price': None, 'trend': None},
 }
 
-# Estratégias para identificar padrões de candles
 def engolfo(candles):
     if len(candles) < 2:
         return None
@@ -114,10 +109,8 @@ def estrela_da_manha(candles):
     return None
 
 async def verificar_resultado(ativo, strategy, initial_price):
-    """Função que verifica o resultado da operação."""
     await asyncio.sleep(68)  # Espera 1 minuto e 8 segundos para a análise
 
-    # Obtém o preço final após o período de análise
     final_candles = await obter_dados_precos(ativo)
     if not final_candles:
         logging.error(f"Falha ao obter dados finais para o ativo {ativo}.")
@@ -125,67 +118,44 @@ async def verificar_resultado(ativo, strategy, initial_price):
 
     final_price = final_candles[-1]['close']
 
-    # Determina o resultado baseado no sinal
     if (strategy in ['engolfo_de_baixa', 'marubozu_de_baixa', 'enforcado'] and final_price < initial_price) or \
        (strategy in ['engolfo_de_alta', 'marubozu_de_alta', 'martelo', 'estrela_da_manha'] and final_price > initial_price):
         return 'sucesso', initial_price, final_price
     
     return 'falha', initial_price, final_price
 
-async def run_bot(context):
-    """Função que verifica as estratégias e envia sinais."""
+async def run_bot():
     logging.info("Iniciando verificação das estratégias...")
     current_time = datetime.now()
 
-async def handler(request):
-    """Manipulador principal que será invocado pelo Vercel."""
-    logging.info("Handler invocado.")
-    await run_bot()  # Chama o bot
-    return {
-        "statusCode": 200,
-        "body": "Bot executado com sucesso!"
-    }
-        
     for ativo in ativos:
         candles = await obter_dados_precos(ativo)
         if not candles:
             logging.error(f"Falha ao obter dados para o ativo {ativo}. Pulando para o próximo.")
             continue
 
-        logging.info(f"Dados obtidos para {ativo}: {candles[-1]}")  # Log para verificar os dados obtidos
+        logging.info(f"Dados obtidos para {ativo}: {candles[-1]}")
 
         last_time = last_sent_time.get(ativo, datetime.min)
         strategy = None
 
-        # Verificando cada estratégia e logando se alguma é identificada
-        logging.info(f"Verificando 'Engolfo' para {ativo}")  # Novo log
+        logging.info(f"Verificando 'Engolfo' para {ativo}")
         strategy = engolfo(candles)
-        if strategy:
-            logging.info(f"Estrategia 'Engolfo' encontrada para {ativo}")
-
-        logging.info(f"Verificando 'Marubozu' para {ativo}")  # Novo log
-        strategy = marubozu(candles)
-        if strategy:
-            logging.info(f"Estrategia 'Marubozu' encontrada para {ativo}")
-
-        logging.info(f"Verificando 'Martelo' para {ativo}")  # Novo log
-        strategy = martelo(candles)
-        if strategy:
-            logging.info(f"Estrategia 'Martelo' encontrada para {ativo}")
-
-        logging.info(f"Verificando 'Enforcado' para {ativo}")  # Novo log
-        strategy = enforcado(candles)
-        if strategy:
-            logging.info(f"Estrategia 'Enforcado' encontrada para {ativo}")
-
-        logging.info(f"Verificando 'Estrela da Manhã' para {ativo}")  # Novo log
-        strategy = estrela_da_manha(candles)
-        if strategy:
-            logging.info(f"Estrategia 'Estrela da Manhã' encontrada para {ativo}")
+        if not strategy:
+            logging.info(f"Verificando 'Marubozu' para {ativo}")
+            strategy = marubozu(candles)
+        if not strategy:
+            logging.info(f"Verificando 'Martelo' para {ativo}")
+            strategy = martelo(candles)
+        if not strategy:
+            logging.info(f"Verificando 'Enforcado' para {ativo}")
+            strategy = enforcado(candles)
+        if not strategy:
+            logging.info(f"Verificando 'Estrela da Manhã' para {ativo}")
+            strategy = estrela_da_manha(candles)
 
         if strategy:
             if current_time - last_time >= MIN_INTERVALS:
-                # Obtém o preço inicial para análise
                 initial_candles = await obter_dados_precos(ativo)
                 if not initial_candles:
                     logging.error(f"Falha ao obter dados iniciais para o ativo {ativo}.")
@@ -198,6 +168,24 @@ async def handler(request):
                     'strategy': strategy,
                     'initial_price': initial_price,
                     'current_time': current_time,
+                })
+                last_sent_time[ativo] = current_time
+                logging.info(f"Sinal adicionado para {ativo}.")
+            else:
+                logging.info(f"Intervalo mínimo não atingido para {ativo}. Último envio: {last_time}, Agora: {current_time}")
+        else:
+            logging.info(f"Nenhuma estratégia identificada para {ativo}.")
+
+    if signals_queue:
+        for signal in signals_queue:
+            result, initial_price, final_price = await verificar_resultado(signal['ativo'], signal['strategy'], signal['initial_price'])
+            logging.info(f"Resultado da operação para {signal['ativo']}: {result}, Preço inicial: {initial_price}, Preço final: {final_price}")
+            operation_results.append({
+                'ativo': signal['ativo'],
+                'strategy': signal['strategy'],
+                'result': result,
+                'initial_price': initial_price,
+                'final_price': final_price
                 })
                 last_sent_time[ativo] = current_time
                 logging.info(f"Sinal adicionado para {ativo}.")
@@ -286,30 +274,22 @@ async def handler(request):
             await context.bot.send_message(chat_id='-1002155523531', text=summary_message)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Comando de início do bot."""
-    await update.message.reply_text("Bot iniciado!")
+    await update.message.reply_text("O bot foi iniciado e está monitorando os ativos.")
 
-async def stop(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Comando para parar o bot."""
-    await update.message.reply_text("Bot parado!")
-    scheduler.shutdown()
-
-async def teste(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Comando para verificar o funcionamento do bot."""
-    await update.message.reply_text("Bot está funcionando corretamente!")
-
-if __name__ == '__main__':
-    # Configura o token do bot e inicializa a aplicação
+async def handler(request):
+    # Inicializa o bot
     application = ApplicationBuilder().token("7040488709:AAHHoYFBxxjEotRnWfnV-AzONpg1TFr5viA").build()
 
-    # Adiciona comandos ao bot
+    # Adiciona os handlers de comando
     application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("stop", stop))
-    application.add_handler(CommandHandler("teste", teste))
 
-    # Configura o scheduler para rodar o bot periodicamente
-    scheduler.add_job(run_bot, 'interval', seconds=10, args=[application])
+    # Chama a função run_bot
+    await run_bot()
+
+    return "Bot executado com sucesso."
+
+# Executa o bot
+if __name__ == "__main__":
+    scheduler.add_job(run_bot, 'interval', minutes=5)
     scheduler.start()
-
-    # Inicia o bot
-    application.run_polling()
+    asyncio.run(run_bot())
